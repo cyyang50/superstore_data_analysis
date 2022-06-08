@@ -1,0 +1,627 @@
+---
+title: "Global Superstore Transaction Data Analysis with R"
+author: "Wan Ying Hsu; Chueh Yang"
+date: "23/9/2021"
+output: 
+  html_document:
+    df_print: paged
+    toc_depth: 4
+    theme: cosmo
+    highlight: kate
+    number_sections: true
+    toc: true
+    toc_float:
+      smooth_scroll: false
+    code_folding: hide
+---
+
+# **Introduction**
+
+![](https://www.digitalvidya.com/wp-content//uploads/2017/05/data-analytics-in-retail-industry.jpg)
+
+
+**Global Superstore firm**  - is a fast grow retailer who offers office supplies, electronics and telecommunication goods through internet. The head of the company expect to optimize its resource by understanding the sales performance for further business development as well as CRM service. Thus, the data science team was assigned with a transaction data that was collect from 2012 to 2015.  
+
+The dataset contains 51,290 rows with 24 variables. There are three sheets in the original dataset, **"Orders"**, **"Returns"** and **"People"**. **"Orders"** is a transaction based dataset which contains all  orders that have been placed across entire global markets. **"Returns"** refers to a list of all returned orders. Nevertheless, there is no indication of the variables in the **"People"** sheet, thus we do not consifer this table in our analysis.  
+
+**Globbal_superstore_2016.xlsx**, was collected from data.world (source: https://data.world/vikas-0731/global-super-store ).  
+
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE, message=FALSE, warning=FALSE, attr.output='style="max-height: 200px;"')
+options(knitr.table.format = "html")
+options(digits = 2)
+library(readxl)
+library(knitr)        
+library(kableExtra)
+library(lubridate)
+library(ggplot2)
+library(RColorBrewer)
+library(scales)
+library(dplyr)
+library(gridExtra)
+library(forcats)
+library(tidyr)
+library(arules)
+library(arulesViz)
+library(maps)
+library(hrbrthemes)
+```
+
+## **Importing Data **
+```{r echo = FALSE }
+# load the file
+orders <- read_excel("../Data/global_superstore_2016.xlsx", sheet = "Orders")
+returns <- read_excel("../Data/global_superstore_2016.xlsx", sheet = "Returns")
+
+Ordersheet <- 
+kable(head(orders,7)) %>%
+  kable_styling(fixed_thead = T) %>%
+  scroll_box(height = "200px")
+
+```
+
+The original sheet **"Orders"** is as below, 
+```{r echo = FALSE }
+Ordersheet
+```
+  
+<br/> 
+The Data variables, type and description are shown in the following table.  
+**Data variables and description:**  
+
+<div style="height: 200px; overflow: auto">
+<table style="height: 0px;">
+|*Variables*                   |  *Type*   |   *Description*                                            |
+|:-----------                  |:----------|:-----------------------------------------------------------|
+| **Row ID**                      |numeric   |   The ID number of rows                |
+| **Order ID**                      |character   |   The ID of orders                |
+| **Order Date**                      |YYYY-MM-DD   |   The date that orders have been placed                |
+| **Ship Date**        |YYYY-MM-DD  |   The date that orders have been shipped      |
+| **Ship Mode**                     |character|   The mode of shipping                      |
+| **Customer ID**       |character |   The ID of customers               |
+| **Customer Name**              |character |   The name of customers                   |
+| **Segment **         |character |   The type of customers                  |
+| **Postal Code**         |numeric |   The postal code of customer's location (only applied in USA)                |
+| **City**     |character |    The city of customer's location |
+| **State**  |character |   The state of customer's location |
+| **Country**             |character |   The country of customer's location                        |
+| **Region**            |character |   The region of customer's country                            |
+| **Market**                  |character |   The market to which the customer's location belongs                     |
+| **Product ID**                  |character |   The ID of products                            |
+| **Category**          |character |   The category to which the product belongs    |
+| **Sub-Category**          |character  |   The subcategory to which the product belongs    |
+| **Product Name**          |character|   The full name of the product    |
+| **Sales**          |numeric |   The sales amount of the product    |
+| **Quantity**          |numeric |   The sales quantity of the product    |
+| **Profit**          |numeric |   The profit of the product    |
+| **Shipping Cost**          |numeric |   The shipping fee of the product    |
+| **Order Priority**          |character  |   The priority of the order    |
+</table>
+</div>
+
+
+## **Data Inspection**
+### Data clearning and preparing
+First of all, data was inspected to see whether any NaN values and duplicated rows existing. Some column names included space, for the coding purpose, we transform all column names into lowercase with underscore. Then, duplicated and uninterested features are deleted.  
+
+ - Remove **Return** orders from the main **Orders** sheet
+ - Remove **Row ID** and **Postal Code** from order table
+
+```{r echo=TRUE, results='hide'}
+# delete unnecessary column
+orders <- orders[,-which(colnames(orders) %in% c("Row ID","Postal Code"))]
+
+#checked duplicated and missing data
+anyDuplicated(orders)
+anyDuplicated(returns)
+sum(is.na(orders))
+sum(is.na(returns))
+
+# rename column name
+colnames(orders) <- tolower(gsub(" ", "_", colnames(orders)))
+colnames(returns) <- tolower(gsub(" ", "_", colnames(returns)))
+names(orders)[names(orders) == 'segment'] <- 'customer_type0'
+names(orders)[names(orders) == 'category'] <- 'category0'
+names(orders)[names(orders) == 'sub-category'] <- 'sub_category0'
+names(orders)[names(orders) == 'order_priority'] <- 'order_priority0'
+```
+
+ - The **order_date** was divided into year, month, day, and number of week respectively
+ 
+The character variables with different categories were transferred to categorical variables. After reordering the columns, the dataset was ready for further process. The final data structure is as follows.  
+
+```{r }
+# delete return order
+orders <-orders[!(orders$order_id %in% returns$order_id),]
+
+
+# transfer the date respectively to year, month, day, week 
+
+orders$year <- year(orders$order_date)
+orders$month <- month(orders$order_date)
+orders$day <- day(orders$order_date)
+orders$week <- week(orders$order_date)
+
+# transfer the character variable to categorical variables 
+col <- c("customer_type0", "category0", "sub_category0", "order_priority0")
+orders[col] <- lapply(orders[col], factor)
+
+# create the new column for categorical variables
+
+orders <- orders %>%
+  mutate(customer_type=fct_recode(customer_type0,
+                                   "1" = "Consumer",
+                                   "2" = "Corporate",
+                                   "3" = "Home Office"))
+
+orders <- orders %>%
+  mutate(category=fct_recode(category0,
+                                   "1" = "Furniture",
+                                   "2" = "Office Supplies",
+                                   "3" = "Technology"))
+
+orders <- orders %>%
+  mutate(sub_category=fct_recode(sub_category0,
+                                   "1" = "Accessories",
+                                   "2" = "Appliances",
+                                   "3" = "Art",
+                                   "4" = "Binders",
+                                   "5" = "Bookcases",
+                                   "6" = "Chairs",
+                                   "7" = "Copiers",
+                                   "8" = "Envelopes",
+                                   "9" = "Fasteners",
+                                   "10" = "Furnishings",
+                                   "11" = "Labels",
+                                   "12" = "Machines",
+                                   "13" = "Paper",
+                                   "14" = "Phones",
+                                   "15" = "Storage",
+                                   "16" = "Supplies",
+                                   "17" = "Tables"))
+
+
+orders <- orders %>%
+  mutate(order_priority=fct_recode(order_priority0,
+                                   "1" = "Critical",
+                                   "2" = "High",
+                                   "3" = "Medium",
+                                   "4" = "Low"))
+
+# reorder column
+orders <- orders[c("order_id", "order_date", "year", "month", "day", "week", "ship_date", "ship_mode", "customer_id", "customer_name", "customer_type0", "customer_type", "city", "state", "country", "region",  "market", "product_id", "category0", "category", "sub_category0", "sub_category", "product_name", "sales", "quantity", "discount", "profit", "shipping_cost", "order_priority0", "order_priority")]
+
+cols <- c("customer_type", "category", "sub_category", "order_priority")
+orders[cols] <- lapply(orders[cols], factor)
+
+# Delete negative quantity
+orders <- orders %>%
+  mutate(quantity = replace(quantity, quantity <= 0, NA)) #
+
+# export csv file
+write.csv(orders, file="../Data/orders.csv", row.names = F)
+
+# final data
+glimpse(orders)
+
+```
+
+# **Data Analysis** 
+
+As mentioned, the head of the company wish to generate insights from the transaction data. Thus, the use cases are derived after the first glance of the given dataset.  
+
+In order to implementing data-driven approach, we divided data into product-oriented and customer-centric data for the company's CRM sales strategies. We will firstly take look of the customer related data that are namely customer ID, monetary value, frequency of purchasing and purchasing behaviors and respective markets together with transaction data such as order ID and product information to identify customer segment.  
+
+## **Customer Data Analysis with RFM model**
+To understand customer purchasing behavior, RFM analysis is applied for the use of estimating customer related data. Recency, Frequency of purchasing, and total Monetary Value as well as average spending are determined.  
+
+**RFM** is a classic analysis for segmenting customer into several groups that based on the recent interactions, purchase frequency and monetary contribution. In this section, we deal with part of the data from the order table. In order to conduct RFM analysis,a dataframe is created with a selection of customer information from the original dataset.  
+
+```{r}
+#Create a variable max_date: the maximum of the order date, which will be use to calculate recency value
+max_date <- max(orders$order_date)
+
+rfm_df <- orders %>% 
+  group_by(customer_id) %>% 
+  summarise(recency = as.numeric(max_date -max(order_date)),
+            frequency = n_distinct(order_id), monetary = sum(sales)/n_distinct(order_id))
+summary(rfm_df) #summary of recency, monetary values
+
+```
+
+### **RFM Graphical Analysis**
+Let's compare the summary of `rfm_df`, and the RFM Graphical Analysis, strong right skew tendency is found in the RFM value graph. And, it is clear to see major of customers only purchase once, with average spending amount is 481 and average return purchase are made at around 510 days. Therefore, a product analysis also need to be checked in order to understand the cause of low average spending amount of most of customers.  
+```{r}
+library(gridExtra)
+r <- ggplot(rfm_df) + geom_density(aes(x = recency))
+f <- ggplot(rfm_df) + geom_density(aes(x= frequency))
+m <- ggplot(rfm_df) + geom_density(aes(x = monetary))
+grid.arrange(r, f, m, nrow =3)
+```
+
+### **Building RFM Segment**
+The methodology of RFM often used in business sectors, it allows business to group customers to optimize business resource for various use cases such as sales promotion, marketing campaign or customer retention. The RFM analysis consists three main variables:  
+
+ - **Recency** : Identify the date that customers made the last purchase
+ - **Frequency**: Analysis frequency of purchase in a defined time
+ - **Monetary**: Evaluate a customer average spending in a period of time  
+
+In order to perform RFM segment, we need to calculate the RFM value for each customer, we will extract some features that are needed for the RFM Analysis. Here we create a `rfm_df` by grouping data with unique `customer_id`, and three variables are created based on the selection features:  
+
+ - **customer_id**: The unique customer entry of each customer
+ - **max_date**: The latest order date in the raw dataset
+ - **order_date**: To understand customer purchase behavior
+ - **order_id**: To calculate how many order per customer made
+ - **sales**: The sum of customer spending  
+
+According to **Pareto Principle**, [80% of consequences come from 20% of the causes](https://www.investopedia.com/terms/1/80-20-rule.asp). Based on the 80-20 rule, we label customers with their respective RFM score. The `cut` function `break = 5`, that divides customers based value of 20% in quarterlies.  
+
+```{r}
+rfm_df$Rscore <- cut(rfm_df$recency, 5, labels = c(5,4,3,2,1))
+rfm_df$Fscore <- cut(rfm_df$frequency, 5, labels = F)
+rfm_df$Mscore <- cut(rfm_df$monetary, 5, labels = F)
+rfm_df$Rscore <- as.numeric(rfm_df$Rscore)
+head(rfm_df)
+```
+
+**Sorting data with decending order with RFM score value**
+```{r echo=TRUE}
+rfm_df <- rfm_df[with(rfm_df, order(-Rscore, -Fscore, -Mscore)), ]
+```
+**Creating RFM score group**
+```{r echo=TRUE}
+RFMscore<- rfm_df$Rscore*100 + rfm_df$Fscore*10 + rfm_df$Mscore
+rfm_df<- cbind(rfm_df, RFMscore)
+
+head(rfm_df, n = 20)
+```
+
+```{r}
+rfm_df$RFMgroup <-as.factor(rfm_df$RFMscore)
+rfm_df<- rfm_df %>%
+  group_by(RFMgroup) %>%
+  mutate(group_no = n_distinct(customer_id))
+
+rfm_df %>%
+  head() %>%
+  kable() %>%
+  kable_minimal()
+```
+<br/>
+**Graphical analysis with RFM group distribution**
+
+```{r}
+ggplot(rfm_df, aes(Rscore, Fscore, fill= monetary))+ 
+  geom_tile() +
+  scale_fill_distiller(palette = "Blues") +
+  theme_ipsum()
+```
+
+**Graphical analysis with number of customer per RFM group**
+```{r}
+ggplot(rfm_df, aes(factor(RFMscore))) +
+  geom_bar(color = "deepskyblue1", fill = "deepskyblue1" ) + 
+  labs(x = "RFM", y = "No. Customers", title = "No. Customer per segment group") +
+  theme(plot.title = element_text(face = "bold", size = 16, hjust = 10)) +
+  theme_bw() +
+  theme(axis.title = element_text( face = "bold"), plot.title = element_text(hjust = 0.5),axis.text.x = element_text(size = 6))
+
+```
+
+**Clustering Analysis**  
+Here, we perform a hierarchical cluster analysis using a set of dissimilarities.  
+
+```{r fig.height= 8, fig.width = 12}
+rfm_df2 <- rfm_df
+d <- dist(rfm_df2)
+c <- hclust(d, method = 'average')
+
+plot(c)
+```
+**The output of this clustering analysis was not ideal for the interpretation**. Other setting or machine learning methods should be test for carrying out better result. Therefore, the goal of the customer data analysis is to identified who are the most value customers, and how are we going to utiliz historical data to predict  customer lifetime value in next project.
+
+
+## **Product Data Analysis**
+
+In this section, we continue use the same dataset but with product-oriented focus to carry out sales performance analysis in the following sections.  
+
+
+### **Sales vs. Subcategory**  
+The graph below represents the sales amount of each subcategory over 4 years (2012-2015). The top five subcategory in terms of sales amount are phones, copiers, chairs bookcase and storage. Their sales volume are high and their unit prices are also higher. When the sales amount of each subcategory are presented according to year-basis and market-basis, all of them show the similar trends as the trend across all markets from 2012 to 2015.  
+
+```{r}
+# Sales vs. Subcategory(all)
+ggplot(orders %>% group_by(sub_category0) %>% summarize_at("sales",sum,na.rm=TRUE), aes(x = reorder(sub_category0, sales), y = sales)) +
+  geom_bar(stat="identity", fill = "skyblue3")  +
+  labs(x = "subcategory", y = "sales", title = "Sales vs. Subcategory") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_text(aes(label=format(sales, big.mark = ",")), position = position_dodge(0.8),vjust="inward",hjust="inward", size = 2.3) +
+  scale_y_continuous(labels = comma) +
+  theme_bw() +
+  coord_flip()
+
+
+# Sales vs. Subcategory(by year)
+ggplot(data=orders, aes(x = reorder(sub_category0, sales), y = sales)) + 
+  stat_summary(fun = "sum", geom = "bar", position = "identity", fill = "skyblue3") +
+  facet_wrap(~year) +
+  labs(x = "subcategory", y = "sales", title = "Sales vs. Subcategory (per year)") +
+  theme(plot.title = element_text(hjust = 0.5)) + 
+  scale_y_continuous(labels = comma) +
+  theme_bw() +
+  coord_flip() 
+
+# Sales vs. Subcategory(by market)
+ggplot(data=orders, aes(x = reorder(sub_category0, sales), y = sales)) + 
+  stat_summary(fun = "sum", geom = "bar", position = "identity", fill = "skyblue3") +
+  facet_wrap(~market) +
+  labs(x = "subcategory", y = "sales", title = "Sales vs. Subcategory (per market)") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_y_continuous(labels = comma) +
+  theme_bw() +
+  coord_flip()
+
+```
+
+### **Sales/Profit vs. Subcategory**
+Compared to sales ranking of subcategory, profit ranking of subcategory is slightly different, especially the negative profit of Tables is observed.
+
+```{r}
+# Profit vs. Subcategory
+orderSP <- 
+  orders %>% group_by(sub_category0) %>% 
+  summarize(Sales =sum(sales), Profit =sum(profit)) %>%
+  pivot_longer(cols = -sub_category0, 
+               names_to = "type",
+               values_to = "results")
+
+ggplot(orderSP, aes(x = reorder(sub_category0, results), y = results, fill = type)) +
+  geom_bar(stat="identity", position="dodge") +
+  labs(x = "subcategory", y = "amount", title = "Sales/Profit vs. Subcategory") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_text(aes(label=format(results, big.mark = ",")), position = position_dodge(0.85), vjust="inward",hjust="inward", size = 2.3) +
+  scale_y_continuous(labels = comma) +
+  scale_fill_brewer(palette = "Blues") +
+  theme_bw() +
+  coord_flip()
+
+```
+
+### **Top 20 Sales vs. Product**
+The following graph displays the global top 20 best sellers from 2012 to 2015.   
+```{r}
+# Top 20 Sales vs. Product Name (all)
+top20pros <- orders %>% group_by(product_name) %>% summarize_at("sales",sum,na.rm=TRUE) %>% top_n(20, sales)
+prolist0 <- data.frame(sub_category = orders$sub_category0, product_name = orders$product_name)
+prolist0 <- prolist0[!duplicated(prolist0$product_name), ]
+prolists <- merge(x = top20pros, y = prolist0, by = "product_name", all.x = TRUE)
+
+# Top 20 Sales vs. Product Name (all)
+ggplot(prolists, aes(x = reorder(product_name, sales), y = sales, fill = sub_category)) +
+  geom_bar(stat="identity")  +
+  labs(x = "product_name", y = "sales", title = "Top 20 Sales vs. Product Name") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_text(aes(label=format(sales, big.mark = ",")), position = position_dodge(0.85), vjust="inward",hjust="inward", size = 2.3)+
+  scale_fill_brewer(palette = "Blues") +
+  scale_y_continuous(labels = comma) +
+  theme_bw() +
+  coord_flip()
+
+```
+
+
+The top 5 best sellers in each market is diverse. Except USCA (United States and  Canada), "phones" is the most popular category among other markets. USCA’s best sellers are all office equipment.  
+
+```{r}
+# Top 5 Sales vs. Product Name (per market)
+
+top5prosx <- orders %>% group_by(market, product_name) %>%summarize_at("sales",sum,na.rm=TRUE)%>% top_n(5, sales)
+top5prosx <- merge(x = top5prosx, y = prolist0, by = "product_name", all.x = TRUE)
+
+ggplot(data = top5prosx, aes(x = market, y = sales, group= product_name, fill =sub_category)) +
+  geom_bar(stat="identity", position="dodge", color="gray") +
+  labs(x = "Market", y = "sales", title = "Top 5 Sales Product vs. Market") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_text(aes(label=product_name), position = position_dodge(1), vjust="inward",hjust="inward", size = 2.3)+
+  scale_fill_brewer(palette = "Blues", direction = -1) +
+  theme_bw() +
+  theme(
+    legend.position = c(.95, .1),
+    legend.justification = c("right", "bottom")
+    ) +
+  coord_flip()
+  
+```
+
+### **Growth Rate vs. Subcategory**
+In respect of subcategory, yearly sales are compared and annual sales growth rates are presented. The sales of all subcategory are increased with year, except for supplies which tend to decline in 2013.  
+```{r}
+#  sales vs. subcategory
+ordersy0 <- 
+  orders %>% group_by(year,sub_category0) %>% summarize(sum_sales =sum(sales)) %>% pivot_wider(names_from = "year", values_from = "sum_sales")
+
+ordersy0 <- 
+ordersy0  %>% pivot_longer(cols = -sub_category0, names_to = "year", values_to = "sales")
+
+
+ggplot(data = ordersy0, aes(x = sub_category0, y = sales, fill = year)) +
+  geom_bar(stat="identity", position="dodge") +
+  labs(x = "subcategory", y = "sales", title = "subcategory vs. sales") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_brewer(palette = "Blues") +
+  scale_y_continuous(labels = comma) +
+  theme_bw() +
+  coord_flip()
+
+# year growth rate vs. subcategory 
+ordersy <- 
+  orders %>% group_by(year,sub_category0) %>% summarize(sum_sales =sum(sales)) %>% pivot_wider(names_from = "year", values_from = "sum_sales")
+
+names(ordersy)[names(ordersy) == "2012"] <- "r2012"
+names(ordersy)[names(ordersy) == "2013"] <- "r2013"
+names(ordersy)[names(ordersy) == "2014"] <- "r2014"
+names(ordersy)[names(ordersy) == "2015"] <- "r2015"
+
+ordersgr <- 
+ordersy %>% mutate(gr2013 = (r2013 - r2012)/r2012*100) %>% mutate(gr2014 = (r2014 - r2013)/r2013*100) %>% mutate(gr2015 = (r2015 - r2014)/r2014*100) %>% select(sub_category0, gr2013, gr2014, gr2015) %>% pivot_longer(cols = -sub_category0, names_to = "year", values_to = "growth_rate")
+
+ordersgr$year <- gsub("gr", "", ordersgr$year)
+
+ggplot(data = ordersgr, aes(x = sub_category0, y = growth_rate, fill = year)) +
+  geom_bar(stat="identity", position="dodge") +
+  labs(x = "subcategory", y = "year growth rate (%)", title = "subcategory vs. year growth rate") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_text(aes(label=round(growth_rate, digits= 2)), position = position_dodge(0.85), vjust="inward",hjust="inward", size = 2)+
+  scale_fill_brewer(palette = "Blues") +
+  theme_bw() +
+  coord_flip()
+
+```
+
+## **Region Analysis** ( the section of our choice)
+
+This section is selected to be an additional section that is to demonstrate the R packages, `map` and `gridExtra`, that was not mentioned in the R bootcamp course.  
+
+ - `map` is used to project maps with geographical data, and map data frame is downloaded via `map` and combined with analyzed dataset for map display.  
+ - `GridExtra` is used to arrange multiple grid-based plots on the same output.  
+
+### **Sales map**
+From 2012 to 2015, sales amount of United States ranked first in the world, and the subsequent four countries in the ranking are Australia, France, China, and Germany.
+
+```{r}
+# map data process
+world_map <-map_data("world")
+
+world_map$region <- gsub("USA", "United States", world_map$region)
+world_map$region <- gsub("UK", "United Kingdom", world_map$region)
+world_map$region <- gsub("Republic of Congo", "Republic of the Congo", world_map$region)
+world_map$region <- gsub("Ivory Coast", "Cote d'Ivoire", world_map$region)
+world_map$region <- gsub("Myanmar", "Myanmar (Burma)", world_map$region)
+
+
+mapsales <- orders %>% group_by(country) %>% summarize_at("sales",sum,na.rm=TRUE)
+mapsales <- world_map %>% left_join(mapsales,by = c("region" = "country"))
+
+# country vs. sales (all)
+ggplot(mapsales, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = sales), color = "white")  +
+  scale_x_continuous(breaks = seq(-180, 210, 45), labels = function(x){paste0(x,"°")}) +
+  scale_y_continuous(breaks = seq(-60, 100, 30), labels = function(x){paste0(x,"°")}) +
+  scale_fill_gradient(low = "lightblue", high = "steel blue") +
+  labs(x = "Longitude", y = "Latitude", title = "Sales") +
+  theme(plot.title = element_text(hjust = 0.5), )
+```
+
+### **Sales map (per year)**
+The distribution of yearly sales by region can refer to the following four maps. The overall trend had not changed much during 2012 to 2015.  
+```{r}
+
+## country vs.sales per year
+
+fcsy <- function(x){
+  mapsalesy <- orders %>% filter(year %in% x) %>% group_by(country) %>% summarize_at("sales",sum,na.rm=TRUE)
+  mapsalesy <- world_map %>% left_join(mapsalesy,by = c("region" = "country"))
+  
+  ggplot(mapsalesy, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = sales), color = "white")  +
+  scale_x_continuous(breaks = seq(-180, 210, 45), labels = function(a){paste0(a,"°")}) +
+  scale_y_continuous(breaks = seq(-60, 100, 30), labels = function(b){paste0(b,"°")}) +
+  scale_fill_gradient(low = "lightblue", high = "steel blue") +
+  labs(x = "Longitude", y = "Latitude", title = paste0("Sales of ", x)) +
+  theme(plot.title = element_text(hjust = 0.5),axis.text.x = element_text(size = 6))
+
+}
+
+s2012 <- fcsy(2012)
+s2013 <- fcsy(2013)
+s2014 <- fcsy(2014)
+s2015 <- fcsy(2015)
+grid.arrange(s2012, s2013, s2014, s2015, ncol = 2)
+```
+
+
+# **Product Recommendation** (Prediction) 
+
+A modeling is also given to identify product sold pattern based on the association rule analysis in this section, this model will allow as to introduce a new feature **recommendation** to the stores/ online retailers.  
+
+## **Frequent Purchased Items**
+
+Base on previous analysis, **Corporate** is our potential customer. In product recommendation part, we only consider the data which customer type belongs to **Corporate**.  
+
+The method used for product recommendation is **Association Analysis**. Its typical application is the analysis of buying behavior in stores and online retailers. They record the contents of shopping carts which are checkout. By finding frequent itemsets, they can learn what is commonly bought together and use this information to increase sales.   
+
+To understand the frequent itemsets and logic of association rule, a transaction's dataset is built, which consists ofeach order ID (transaction) and its purchased product(itemsets).  
+
+The frequent-itemsets are sets of items that appear in many of the transaction. The bar chart below shows the top 15 products with high relative item frequency.  
+
+```{r results='hide'}
+
+#customer
+listc <- read.csv("../Data/orders.csv") %>% filter(customer_type0 == "Corporate") %>% dplyr::select(order_id, product_name)
+
+prodlistc <- list()
+for(i in unique(listc$order_id)){
+  
+  prodlistc[[i]] <- listc[which(listc$order_id == i), 2]
+}
+
+prodlistc <- as(prodlistc, "transactions")
+
+# the frequent items
+itemFrequencyPlot(prodlistc,topN = 15)
+
+```
+
+## **Association Rule Mining** 
+
+Association rule mining is based on the “market-basket” model from the data. `Apriori` function is used for extracting association rules. Parameter *support* and *confidence* are adjusted for selecting “relevant” rules from the set of all possible rules.  
+
+```{r results='hide' }
+# Rule
+RulesRepc <- apriori(prodlistc, parameter = list(support=0.00025, confidence=0.0003, target = "rules",minlen = 2))
+
+```
+
+Here are the first 25 rule suggested. {LHS} is a set of items which customers purchased and {RHS} is an item which is recommended according to the association rules. The corresponding *support*, *confidence* and *lift* are also listd.   
+```{r }
+# the first 10 rule
+inspect(RulesRepc[1:25])
+
+```
+
+The figure illustrates the rule of product recommendation. The implication of this association rule is that if all of the items in {LHS} appear in some orders, then {RHS} is likely to appear in that order as well. The coloured dots, which means *lift* value, are an estimate of the conditional probability of { RHS } given {LHS}.  
+
+In general, *support* and *confidence* value are expected to be high, otherwise the rule has little practical effect. Disappointingly, for mining the applied rules of this project, the *support* and *confidence* value are set to very low. The possible reason is that the purchase items in orders are various, and there are rarely repeated or similar orders.  
+
+```{r  fig.height= 8}
+#Balloon plot
+plot(RulesRepc,method="grouped", col ="Blue")
+
+```
+
+# **Conclusion** 
+From the above analysis, we conclude as below,  
+**Customer Segment:**  
+ 
+ - Major of customers only purchase once, with average spending amount is 481 and average return purchase are made at around 510 days  
+ - According to the RFM heat map, high value and frequent return customer are missing, further customer data analysis based on customer type is suggested  
+ - The output of this clustering analysis was not ideal for the interpretation. Other setting or machine learning methods should be test for carrying out better result  
+
+**Product Segment:**  
+ 
+ - The top 5 subcategory in terms of sales amount are phones, copiers, chairs bookcase and storage. 
+ - Profit ranking of subcategory is slightly different from the sales ranking , especially the negative profit of Tables is observed  
+ - The sales of all subcategory are increased with year, except for supplies which tend to decline in 2013  
+ - The results of product recommendation is not as clearly as expected. The possible reason is that the purchase items in orders are various, and there are rarely repeated or similar orders  
+
+
+**Region Segment:**  
+ 
+ - During 2012 to 2015, sales of United States ranked first in the world, and the subsequent four countries in the ranking are Australia, France,  China, and Germany  
+
+
+To sum up, we found out the transaction data is fairly dispersed, majority customers and sales figure are too low to conduct accurate clustering or customer segment. On the other hand, the product sold pattern was recognizable when taking a specific customer type for the analysis. This would  help the sales team and marketing department for launch promotion and implementing marketing strategies for up selling and cross selling approaches.
+
+
+
