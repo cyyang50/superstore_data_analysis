@@ -72,29 +72,29 @@ The Data variables, type and description are shown in the following table.
 <table style="height: 0px;">
 |*Variables*                   |  *Type*   |   *Description*                                            |
 |:-----------                  |:----------|:-----------------------------------------------------------|
-| **Row ID**                      |numeric   |   The ID number of rows                |
-| **Order ID**                      |character   |   The ID of orders                |
-| **Order Date**                      |YYYY-MM-DD   |   The date that orders have been placed                |
-| **Ship Date**        |YYYY-MM-DD  |   The date that orders have been shipped      |
-| **Ship Mode**                     |character|   The mode of shipping                      |
-| **Customer ID**       |character |   The ID of customers               |
-| **Customer Name**              |character |   The name of customers                   |
-| **Segment **         |character |   The type of customers                  |
-| **Postal Code**         |numeric |   The postal code of customer's location (only applied in USA)                |
-| **City**     |character |    The city of customer's location |
-| **State**  |character |   The state of customer's location |
-| **Country**             |character |   The country of customer's location                        |
-| **Region**            |character |   The region of customer's country                            |
-| **Market**                  |character |   The market to which the customer's location belongs                     |
-| **Product ID**                  |character |   The ID of products                            |
-| **Category**          |character |   The category to which the product belongs    |
-| **Sub-Category**          |character  |   The subcategory to which the product belongs    |
-| **Product Name**          |character|   The full name of the product    |
-| **Sales**          |numeric |   The sales amount of the product    |
-| **Quantity**          |numeric |   The sales quantity of the product    |
-| **Profit**          |numeric |   The profit of the product    |
-| **Shipping Cost**          |numeric |   The shipping fee of the product    |
-| **Order Priority**          |character  |   The priority of the order    |
+| **Row ID**                   |numeric    |   The ID number of rows                                    |
+| **Order ID**                 |character  |   The ID of orders                                         |
+| **Order Date**               |YYYY-MM-DD |   The date that orders have been placed                    |
+| **Ship Date**                |YYYY-MM-DD |   The date that orders have been shipped                   |
+| **Ship Mode**                |character  |   The mode of shipping                                     |
+| **Customer ID**              |character  |   The ID of customers                                      |
+| **Customer Name**            |character  |   The name of customers                                    |
+| **Segment **                 |character  |   The type of customers                                    |
+| **Postal Code**              |numeric    |   The postal code of customer's location (only applied in USA)|
+| **City**                     |character  |    The city of customer's location                         |
+| **State**                    |character  |   The state of customer's location                         |
+| **Country**                  |character  |   The country of customer's location                       |
+| **Region**                   |character  |   The region of customer's country                         |
+| **Market**                   |character  |   The market to which the customer's location belongs      |
+| **Product ID**               |character  |   The ID of products                                       |
+| **Category**                 |character  |   The category to which the product belongs                |
+| **Sub-Category**             |character  |   The subcategory to which the product belongs             |
+| **Product Name**             |character  |   The full name of the product                             |
+| **Sales**                    |numeric    |   The sales amount of the product                          |
+| **Quantity**                 |numeric    |   The sales quantity of the product                        |
+| **Profit**                   |numeric    |   The profit of the product                                |
+| **Shipping Cost**            |numeric    |   The shipping fee of the product                          |
+| **Order Priority**           |character  |   The priority of the order                                |
 </table>
 </div>
 
