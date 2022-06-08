@@ -1,7 +1,5 @@
 ---
 title: "Global Superstore Transaction Data Analysis with R"
-author: "Wan Ying Hsu; Chueh Yang"
-date: "23/9/2021"
 output: 
   html_document:
     df_print: paged
